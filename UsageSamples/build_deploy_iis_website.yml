@@ -1,0 +1,63 @@
+################################################################################
+#
+# build_deploy_iis_website
+# Build IIS website and deploy
+# Uses templates from the PipelineTemplates Repo for the build, package, and deploy steps
+#
+# REVISION HISTORY
+# KG - 2/6/2025 - Initial Version
+################################################################################
+
+trigger:
+- main
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  solution: '**/*.sln'
+  buildPlatform: 'Any CPU'
+  artifactName: 'WebApp'
+  ProdBuildConfiguration: 'Production'
+  ProdWebAppName: 'www.mywebsite.com' #Application Pool name within IIS
+  ProdDeployEnvironment: 'Production_WebServers.<ServerName>' #DevOps Environment.ServerName where the DevOps Pipeline Agent is running
+  
+resources:
+  repositories:
+  - repository: templatesFromRepo #alias
+    type: git
+    name: PipelineTemplates #actual name of the referenced repo. Assumes template files are in their own repo in the same DevOps Project
+    ref: refs/heads/main
+
+stages:
+#Build with the Production config, to bundle the Web.Production.config file and its Prod environment specific variables
+- stage: ProdBuildAndPublish
+  displayName: 'Prod Build And Publish'
+  jobs:
+  - job: BuildAndPublish
+    displayName: 'Prod Build And Publish'
+
+    steps:
+    - template: template_asp_net_build_publish.yml@templatesFromRepo
+      parameters:
+        solution: '$(solution)'
+        buildPlatform: '$(buildPlatform)'
+        buildConfiguration: '$(ProdBuildConfiguration)'
+        artifactName: '$(artifactName)-$(ProdBuildConfiguration)'
+
+    
+- stage: ProdDeploy
+  displayName: 'Prod Deploy'
+  variables:
+  - group: 'Prod_Website_Variables' #variables used in Web.config replacement
+
+  jobs:
+  - template: template_iis_website_deploy.yml@templatesFromRepo
+    parameters:
+      deployEnvironmentName: '$(ProdDeployEnvironment)'
+      artifactName: '${{ variables.artifactName }}-${{ variables.ProdBuildConfiguration }}'
+      jsonConfigFileName: ''
+      baseConfigFileName: '**/*.config'
+      releaseConfigFileName: '**/*.$(ProdBuildConfiguration).config'
+      packageFilePath: '$(Pipeline.Workspace)/${{ variables.artifactName }}-${{ variables.ProdBuildConfiguration }}/WebApp.zip'
+      webAppName: '$(ProdWebAppName)'
