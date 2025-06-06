@@ -1,0 +1,28 @@
+################################################################################
+#
+# template_nuget_restore
+# This template will handle the NuGet Install / Restore commands
+#
+# REVISION HISTORY
+# KG - 1/10/2024 - Initial Version
+#
+################################################################################
+
+parameters:
+- name: solution
+  default: '**/*.sln'
+- name: packageDirectory
+  default: 'packages'
+
+steps:
+- task: NuGetToolInstaller@1
+  name: 'NuGetToolInstaller'
+  displayName: 'NuGet tool installer'
+
+- task: NuGetCommand@2
+  name: 'NuGetRestore'
+  displayName: 'NuGet restore packages'
+  inputs:
+    command: 'restore'
+    restoreSolution: ${{ parameters.solution }}
+    restoreDirectory: ${{ parameters.packageDirectory }}

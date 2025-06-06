@@ -1,0 +1,83 @@
+################################################################################
+#
+# template_console_app_deploy
+# Template will download, configure, and deploy a .NET console app. Has support for a pre- and post- PowerShell script (optional)
+#
+# REVISION HISTORY
+# KG - 1/10/2024 - Initial Version
+#
+################################################################################
+
+parameters:
+- name: deployEnvironmentName
+  default: ''
+- name: destinationDirectory
+  default: ''
+- name: packageFilePath
+  default: ''
+- name: artifactName
+  default: ''
+- name: baseConfigFileName
+  default: '**/App.config'
+- name: releaseConfigFileName
+  default: '**/App.Release.config'
+- name: preDeployPSScript
+  default: ''
+- name: postDeployPSScript
+  default: ''
+- name: cleanTarget
+  type: boolean
+  default: true
+- name: overwriteExistingFiles
+  type: boolean
+  default: false
+
+
+jobs: 
+- deployment: 'DeployConsoleApp'
+  displayName: 'Deploy Console App'
+  environment: '${{ parameters.deployEnvironmentName }}'
+  workspace:
+    clean: all
+  strategy:
+    runOnce:
+      deploy:
+        steps:
+        - checkout: none
+
+        - download: current
+          name: 'DownloadBuildArtifacts'
+          displayName: 'Download Build Artifacts'
+          artifact: '${{ parameters.artifactName }}'
+
+        - template: template_xml_config_transform.yml
+          parameters:
+            baseConfigFileName: '${{ parameters.baseConfigFileName }}'
+            releaseConfigFileName: '${{ parameters.releaseConfigFileName }}'
+            archiveFilePath: '${{ parameters.packageFilePath }}'
+
+        - ${{ if ne(parameters.preDeployPSScript,'')}}:
+          - task: PowerShell@2
+            displayName: 'Pre-Deploy PS Script'
+            inputs:
+              filePath: '${{ parameters.preDeployPSScript }}'
+              failOnStderr: true
+              showWarnings: true
+
+        - task: CopyFiles@2
+          displayName: 'Copy Files to Destination Directory'
+          inputs:
+              SourceFolder: '$(Pipeline.Workspace)/${{ parameters.artifactName }}'
+              Contents: '**'
+              TargetFolder: '${{ parameters.destinationDirectory }}'
+              CleanTargetFolder: ${{ parameters.cleanTarget }}
+              OverWrite: ${{ parameters.overwriteExistingFiles }}
+
+        - ${{ if ne(parameters.postDeployPSScript,'')}}:
+          - task: PowerShell@2
+            displayName: 'Post-Deploy PS Script'
+            inputs:
+              filePath: '${{ parameters.postDeployPSScript }}'
+              failOnStderr: true
+              showWarnings: true
+

@@ -1,0 +1,175 @@
+################################################################################
+#
+# template_pbi_item_deploy
+# Template will download Power BI artifact then publish the Power BI item to the specified workspace
+#
+# REVISION HISTORY
+# KG - 5/27/2025 - Initial Version
+#
+################################################################################
+
+parameters:
+- name: DeployEnvironmentName
+  default: ''
+- name: ArtifactName
+  default: ''
+- name: BaseSourcePath
+  default: ''
+- name: PBIItemType
+  default: 'Report'
+- name: WorkspaceName
+  default: ''
+- name: WorkspaceAdminPrincipalID
+  default: ''
+- name: ServicePrincipalAppID
+  default: ''
+- name: ServicePrincipalSecret
+  default: ''
+- name: TenantID
+  default: ''
+- name: ItemFolder
+  default: ''
+- name: DBServerName
+  default: ''
+- name: DatabaseName
+  default: ''
+- name: SemanticModelForReport
+  default: ''
+
+jobs:
+  - deployment: 'UpdatePBIItem${{ parameters.ArtifactName }}'
+    displayName: 'Update PBI Item - ${{ parameters.ArtifactName }}'
+    environment: '${{ parameters.DeployEnvironmentName }}'
+
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: none
+
+          - download: current
+            name: 'DownloadBuildArtifacts'
+            displayName: 'Download Build Artifacts'
+            artifact: '${{ parameters.ArtifactName }}'
+
+          - ${{ if eq(parameters.PBIItemType, 'SemanticModel') }}:
+            - task: PowerShell@2
+              displayName: 'Deploy to ${{ parameters.DeployEnvironmentName }}'
+              inputs:
+                pwsh: true
+                targetType: inline
+                script: |     
+                    $path = "${{ parameters.BaseSourcePath }}"
+                    $semanticModelPath = "$path\${{ parameters.ItemFolder }}"
+                    $workingFolder = "$path\.ado"
+                    $appId = "${{ parameters.ServicePrincipalAppID }}"
+                    $appSecret = "${{ parameters.ServicePrincipalSecret }}"
+                    $tenantId = "${{ parameters.TenantID }}"
+                    $environmentName = "${{ parameters.DeployEnvironmentName }}"
+                    $workspaceName = "${{ parameters.WorkspaceName }}"
+                    $adminPrincipalId = "${{ parameters.WorkspaceAdminPrincipalID }}"
+                    $serverName = "${{ parameters.DBServerName }}"
+                    $databaseName = "${{ parameters.DatabaseName }}"
+
+                    New-Item -ItemType Directory -Path "$workingFolder\modules" -ErrorAction SilentlyContinue | Out-Null
+
+                    Write-Host "##[debug]Downloading FabricPS-PBIP module"
+                    @(
+                        "https://raw.githubusercontent.com/microsoft/Analysis-Services/master/pbidevmode/fabricps-pbip/FabricPS-PBIP.psm1",
+                        "https://raw.githubusercontent.com/microsoft/Analysis-Services/master/pbidevmode/fabricps-pbip/FabricPS-PBIP.psd1") |% {
+
+                            Invoke-WebRequest -Uri $_ -OutFile "$workingFolder\modules\$(Split-Path $_ -Leaf)"
+
+                        }
+
+                    Write-Host "##[debug]Installing Az.Accounts"
+                    if(-not (Get-Module Az.Accounts -ListAvailable)){
+                        Install-Module Az.Accounts -Scope CurrentUser -Force
+                    }
+
+                    Write-Host "##[debug]Deploying to environment '$environmentName'"
+                    # Co-Admin, otherwise only the SPN have visibility to the workspace
+                    $workspacePermissions = @{
+                        "principal" = @{
+                            "id" = "$adminPrincipalId"
+                            "type" = "user"
+                        }
+                        "role"= "Admin"
+                    }
+
+                    Import-Module "$workingFolder\modules\FabricPS-PBIP" -Force
+
+                    Write-Host "##[debug]Authentication with SPN"
+                    Set-FabricAuthToken -servicePrincipalId $appId -servicePrincipalSecret $appSecret -tenantId $tenantId -reset
+
+                    Write-Host "##[debug]Ensure Fabric Workspace exists and set permissions"
+                    $workspaceId = New-FabricWorkspace  -name $workspaceName -skipErrorIfExists
+                    Set-FabricWorkspacePermissions $workspaceId $workspacePermissions
+
+                    Write-Host "##[debug]Set Semantic Model Parameters"
+                    Set-SemanticModelParameters -path "$semanticModelPath" -parameters @{"ServerName" = "$serverName"; "DatabaseName" = "$databaseName"}
+
+                    Write-Host "##[debug]Publish PBIP to Fabric"
+                    $importInfo = Import-FabricItems -workspaceId $workspaceId -path $path
+
+          - ${{ else }}: #Report
+            - task: PowerShell@2
+              displayName: 'Deploy to ${{ parameters.DeployEnvironmentName }}'
+              inputs:
+                pwsh: true
+                targetType: inline
+                script: |     
+                    $path = "${{ parameters.BaseSourcePath }}"
+                    $reportPath = "$path\${{ parameters.ItemFolder }}"
+                    $workingFolder = "$path\.ado"
+                    $appId = "${{ parameters.ServicePrincipalAppID }}"
+                    $appSecret = "${{ parameters.ServicePrincipalSecret }}"
+                    $tenantId = "${{ parameters.TenantID }}"
+                    $environmentName = "${{ parameters.DeployEnvironmentName }}"
+                    $workspaceName = "${{ parameters.WorkspaceName }}"
+                    $adminPrincipalId = "${{ parameters.WorkspaceAdminPrincipalID }}"
+                    $semanticModelForReport = "${{ parameters.SemanticModelForReport }}"
+
+                    New-Item -ItemType Directory -Path "$workingFolder\modules" -ErrorAction SilentlyContinue | Out-Null
+
+                    Write-Host "##[debug]Downloading FabricPS-PBIP module"
+                    @(
+                        "https://raw.githubusercontent.com/microsoft/Analysis-Services/master/pbidevmode/fabricps-pbip/FabricPS-PBIP.psm1",
+                        "https://raw.githubusercontent.com/microsoft/Analysis-Services/master/pbidevmode/fabricps-pbip/FabricPS-PBIP.psd1") |% {
+
+                            Invoke-WebRequest -Uri $_ -OutFile "$workingFolder\modules\$(Split-Path $_ -Leaf)"
+
+                        }
+
+                    Write-Host "##[debug]Installing Az.Accounts"
+                    if(-not (Get-Module Az.Accounts -ListAvailable)){
+                        Install-Module Az.Accounts -Scope CurrentUser -Force
+                    }
+
+                    Write-Host "##[debug]Deploying to environment '$environmentName'"
+                    # Co-Admin, otherwise only the SPN have visibility to the workspace
+                    $workspacePermissions = @{
+                        "principal" = @{
+                            "id" = "$adminPrincipalId"
+                            "type" = "user"
+                        }
+                        "role"= "Admin"
+                    }
+
+                    Import-Module "$workingFolder\modules\FabricPS-PBIP" -Force
+
+                    Write-Host "##[debug]Authentication with SPN"
+                    Set-FabricAuthToken -servicePrincipalId $appId -servicePrincipalSecret $appSecret -tenantId $tenantId -reset
+
+                    Write-Host "##[debug]Ensure Fabric Workspace exists and set permissions"
+                    $workspaceId = New-FabricWorkspace  -name $workspaceName -skipErrorIfExists
+                    Set-FabricWorkspacePermissions $workspaceId $workspacePermissions
+
+                    #get SemanticModels
+                    $result = Invoke-FabricAPIRequest -Uri "workspaces/$workspaceId/semanticModels" -Method Get
+
+                    #find the needed semanticModel
+                    $semanticModel = $result | ? { $_.displayName -ieq $semanticModelForReport }
+
+                    Write-Host "##[debug]Publish PBIP to Fabric"
+                    $importInfo = Import-FabricItem -workspaceId $workspaceId -path $reportPath -itemProperties @{"semanticModelId"=$semanticModel.Id}

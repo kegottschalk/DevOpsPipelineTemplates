@@ -1,0 +1,44 @@
+################################################################################
+#
+# template_archive_publish
+# Template should be used to archive and publish files
+# Used for simple HTML websites, etc, that are not built but we need to publish an archive for deployment
+#
+# REVISION HISTORY
+# KG - 9/20/2024 - Initial Version
+#
+################################################################################
+
+parameters:
+- name: rootFolder
+  default: ''
+- name: artifactName
+  default: 'Artifact'
+- name: recurseSubfolders
+  type: boolean
+  default: true
+
+steps:
+- task: CopyFiles@2
+  inputs:
+    SourceFolder: '${{ parameters.rootFolder }}'
+    ${{ if parameters.recurseSubfolders }}:
+      Contents: |
+        **
+        !*.yml
+        !*.gitignore
+        !README.md
+    ${{ else }}:
+      Contents: |
+        *
+        !*.yml
+        !*.gitignore
+        !README.md
+    TargetFolder: '$(Build.ArtifactStagingDirectory)'
+    CleanTargetFolder: true
+
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: ${{ parameters.artifactName }}
+    publishLocation: 'Container'

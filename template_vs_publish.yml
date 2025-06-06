@@ -1,0 +1,44 @@
+################################################################################
+#
+# template_vs_publish
+# Template will Publish a VS project and then retain the results as a Pipeline artifact
+#
+# REVISION HISTORY
+# KG - 1/10/2024 - Initial Version
+#
+################################################################################
+
+
+parameters:
+- name: buildConfiguration
+  default: 'Release'
+  
+- name: publishWebProjects
+  type: boolean
+  default: true
+
+- name: zipAfterPublish
+  type: boolean
+  default: true
+
+- name: ArtifactName
+  default: ''
+
+steps:
+- task: DotNetCoreCLI@2
+  name: 'Publish'
+  displayName: 'Publish'
+  inputs:
+    command: 'publish'
+    publishWebProjects: ${{ parameters.publishWebProjects }}
+    arguments: '--configuration ${{ parameters.buildConfiguration }} --output $(Build.ArtifactStagingDirectory)'
+    zipAfterPublish: ${{ parameters.zipAfterPublish }}
+
+# Retain Publish results as an Artifact of this pipeline. For use later for deployment
+- task: PublishBuildArtifacts@1
+  name: 'PublishBuildArtifacts'
+  displayName: 'Publish build artifacts'
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: ${{ parameters.ArtifactName }}
+    publishLocation: 'Container'

@@ -1,0 +1,62 @@
+################################################################################
+#
+# template_iis_website_deploy
+# Template will download, configure, and deploy an IIS Website. Has support for both XML and JSON based custom configs
+#
+# REVISION HISTORY
+# KG - 1/10/2024 - Initial Version
+#
+################################################################################
+
+parameters:
+- name: deployEnvironmentName
+  default: ''
+- name: artifactName
+  default: ''
+- name: jsonConfigFileName
+  default: ''
+- name: baseConfigFileName
+  default: ''
+- name: releaseConfigFileName
+  default: ''
+- name: packageFilePath
+  default: ''
+- name: webAppName
+  default: ''
+
+jobs: 
+- deployment: DeployWebsite
+  displayName: 'Deploy Website'
+  environment: '${{ parameters.deployEnvironmentName }}'
+  strategy:
+    runOnce:
+      deploy:
+        steps:
+        - checkout: none
+
+        - download: current
+          name: 'DownloadBuildArtifacts'
+          displayName: 'Download Build Artifacts'
+          artifact: '${{ parameters.artifactName }}'
+
+        - ${{ if ne(parameters.jsonConfigFileName, '') }}:
+          - template: template_json_config_transform.yml
+            parameters:
+              jsonFileName: '${{ parameters.jsonConfigFileName }}'
+              archiveFilePath: '${{ parameters.packageFilePath }}'
+
+        - ${{ if ne(parameters.baseConfigFileName, '') }}:
+          - template: template_xml_config_transform.yml
+            parameters:
+              baseConfigFileName: '${{ parameters.baseConfigFileName }}'
+              releaseConfigFileName: '${{ parameters.releaseConfigFileName }}'
+              archiveFilePath: '${{ parameters.packageFilePath }}'
+
+        - task: IISWebAppDeploymentOnMachineGroup@0
+          name: 'DeployIIS'
+          displayName: 'Deploy IIS website - ${{ parameters.webAppName }}'
+          inputs:
+            WebSiteName: '${{ parameters.webAppName }}'
+            Package: '${{ parameters.packageFilePath }}'
+            TakeAppOfflineFlag: true
+

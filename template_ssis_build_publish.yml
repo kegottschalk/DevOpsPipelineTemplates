@@ -1,0 +1,29 @@
+################################################################################
+#
+# template_ssis_build_publish
+# Template will Build an SSIS project and publish the artifacts. Requires extension "SSIS DevOps Tools" from Microsoft
+#
+# REVISION HISTORY
+# KG - 5/24/2024 - Initial Version
+#
+################################################################################
+
+parameters:
+- name: solution
+  default: '**/*.sln'
+- name: artifactName
+  default: 'SSISArtifact'
+
+steps:
+  - task: SSISBuild@1
+    displayName: 'Build SSIS Solution'
+    inputs:
+      projectPath: '${{ parameters.solution }}'
+      stripSensitive: false
+      outputPath: '$(Build.ArtifactStagingDirectory)'
+
+  - task: PublishPipelineArtifact@1
+    displayName: 'Publish Artifact'
+    inputs:
+      targetPath: '$(Build.ArtifactStagingDirectory)'
+      artifact: '${{ parameters.artifactName }}'

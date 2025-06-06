@@ -1,0 +1,32 @@
+################################################################################
+#
+# template_vs_build
+# Template will First call the NuGet template to install and download nuget packages
+# Then it will Build the VS solution
+#
+# REVISION HISTORY
+# KG - 1/10/2024 - Initial Version
+#
+################################################################################
+
+parameters:
+- name: solution
+  default: '**/*.sln'
+- name: buildPlatform
+  default: 'Any CPU'
+- name: buildConfiguration
+  default: 'Release'
+
+steps:
+- template: template_nuget_restore.yml
+  parameters:
+    solution: '$(solution)'
+
+- task: VSBuild@1
+  name: 'Build'
+  displayName: 'Build Solution'
+  inputs:
+    solution: ${{ parameters.solution }}
+    platform: ${{ parameters.buildPlatform }}
+    configuration: ${{ parameters.buildConfiguration }}
+    clean: true

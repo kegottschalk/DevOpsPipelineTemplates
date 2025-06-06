@@ -1,0 +1,89 @@
+################################################################################
+#
+# template_synapse_wks_deploy
+# Template will download json template artifacts and then deploy the Synapse Workspace 
+#
+# REVISION HISTORY
+# KG - 5/22/2025 - Feature 744 - Initial Version
+#
+################################################################################
+
+parameters:
+- name: deployEnvironmentName
+  default: ''
+- name: targetWorkspaceName
+  default: ''
+- name: targetResourceGroupName
+  default: ''
+- name: artifactName
+  default: ''
+- name: azureSubscription
+  default: ''
+- name: overrideArmParameters
+  default: ''
+- name: templateFile
+  default: ''
+- name: parametersFile
+  default: ''
+- name: storageAccountName
+  default: ''
+
+jobs:
+- deployment: 'UpdateSynapseWorkspace'
+  displayName: 'Update Synapse Workspace - ${{ parameters.targetWorkspaceName }}'
+  environment: '${{ parameters.deployEnvironmentName }}'
+  strategy:
+    runOnce:
+      deploy:
+        steps:
+        - checkout: none
+
+        - download: current
+          name: 'DownloadBuildArtifacts'
+          displayName: 'Download Build Artifacts'
+          artifact: '${{ parameters.artifactName }}'
+
+        #Remove any Locks on the storage account (which would prevent stopping triggers)
+        - task: AzurePowerShell@5
+          displayName: Remove Storage Locks
+          inputs:
+            azureSubscription: '${{ parameters.azureSubscription }}'
+            ScriptType: 'InlineScript'
+            Inline: "Install-Module -Name \"Az.Resources\" -Confirm:$false  -Scope CurrentUser  -Force;\n$result = Get-AzResourceLock -ResourceName \"${{ parameters.storageAccountName }}\" -ResourceType \"Microsoft.Storage/storageAccounts\" -ResourceGroupName \"${{ parameters.targetResourceGroupName }}\"; \nForEach ($lock in $result) { Remove-AzResourceLock -Force -LockID $lock.LockId }"
+            azurePowerShellVersion: 'LatestVersion'
+
+        #Stop any running triggers
+        - task: AzurePowerShell@5
+          displayName: Stop Triggers
+          inputs:
+            azureSubscription: '${{ parameters.azureSubscription }}'
+            ScriptType: 'InlineScript'
+            Inline: "Install-Module -Name \"Az.Synapse\" -Confirm:$false  -Scope CurrentUser  -Force;\n$triggersSynapse = Get-AzSynapseTrigger -WorkspaceName \"${{ parameters.targetWorkspaceName }}\" ; \n$triggersSynapse | ForEach-Object { Stop-AzSynapseTrigger -WorkspaceName \"${{ parameters.targetWorkspaceName }}\" -Name $_.name }\n"
+            azurePowerShellVersion: 'LatestVersion'
+
+        #Deploy workspace and set custom variables
+        - task: Synapse workspace deployment@2
+          displayName: 'Synapse Deployment'
+          inputs:
+            operation: 'deploy'
+            TemplateFile: '${{ parameters.templateFile }}'
+            ParametersFile: '${{ parameters.parametersFile }}'
+            azureSubscription: '${{ parameters.azureSubscription }}'
+            ResourceGroupName: '${{ parameters.targetResourceGroupName }}'
+            TargetWorkspaceName: '${{ parameters.targetWorkspaceName }}'
+            DeleteArtifactsNotInTemplate: false
+            DeployManagedPrivateEndpoints: false
+            FailOnMissingOverrides: false
+            Environment: 'prod'
+            npmpackage: 'prod'
+            OverrideArmParameters: ${{ parameters.overrideArmParameters }}
+
+        #Restart any triggers
+        - task: AzurePowerShell@5
+          displayName: Restart Triggers
+          inputs:
+            azureSubscription: '${{ parameters.azureSubscription }}'
+            ScriptType: 'InlineScript'
+            Inline: '$triggersSynapse = Get-AzSynapseTrigger -WorkspaceName "${{ parameters.targetWorkspaceName }}" ; $triggersSynapse | ForEach-Object { Start-AzSynapseTrigger -WorkspaceName "${{ parameters.targetWorkspaceName }}" -Name $_.name }'
+            azurePowerShellVersion: 'LatestVersion'
+

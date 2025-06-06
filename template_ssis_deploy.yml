@@ -1,0 +1,63 @@
+################################################################################
+#
+# template_ssis_deploy
+# Template will download and deploy an SSIS Project, then configure the Environment. Requires extension "SSIS DevOps Tools" from Microsoft
+#
+# REVISION HISTORY
+# KG - 5/24/2024 - Initial Version
+#
+################################################################################
+
+parameters:
+- name: deployEnvironmentName
+  default: 'Env'
+- name: artifactName
+  default: 'SSISArtifact'
+- name: jsonConfigFileName
+  default: '**/appsettings.json'
+- name: packageFilePath
+  default: ''
+- name: ispacPath
+  default: 'SSISArtifact.ispac'
+- name: DBServerName
+  default: ''
+
+jobs: 
+- deployment: 'DeploySSIS'
+  displayName: 'Deploy SSIS Packages'
+  environment: '${{ parameters.deployEnvironmentName }}'
+  strategy:
+    runOnce:
+      deploy:
+        steps:
+        - checkout: self
+
+        - download: current
+          name: 'DownloadBuildArtifacts'
+          displayName: 'Download Build Artifacts'
+          artifact: '${{ parameters.artifactName }}'
+
+        - template: template_json_config_transform.yml
+          parameters:
+            jsonFileName: '${{ parameters.jsonConfigFileName }}'
+            archiveFilePath: '${{ parameters.packageFilePath }}'
+
+        - task: SSISDeploy@1
+          displayName: 'Deploy Packages'
+          inputs:
+            sourcePath: '${{ parameters.ispacPath }}'
+            destinationType: 'ssisdb'
+            destinationServer: '${{ parameters.DBServerName }}'
+            destinationPath: '/SSISDB/${{ parameters.artifactName }}/${{ parameters.artifactName }}'
+            authType: 'win'
+            whetherOverwrite: 'yes'
+            whetherContinue: 'no'
+
+        - task: SSISCatalog@0
+          displayName: 'Configure SSIS Catalog'
+          inputs:
+            configSource: 'filePath'
+            configPath: '${{ parameters.packageFilePath }}/${{ parameters.jsonConfigFileName }}'
+            rollBackOnError: true
+            targetServer: '${{ parameters.DBServerName }}'
+            authType: 'win'

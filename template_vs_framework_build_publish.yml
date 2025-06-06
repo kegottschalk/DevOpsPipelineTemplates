@@ -1,0 +1,47 @@
+################################################################################
+#
+# template_vs_framework_build_publish
+# Template should be used to build and publish a .NET Framework application
+# Template will First call the NuGet template to install and download nuget packages
+# Then it will Build the VS solution
+# Finally will publish the build artifact
+#
+# REVISION HISTORY
+# KG - 9/20/2024 - Initial Version
+#
+################################################################################
+
+parameters:
+- name: solution
+  default: '**/*.sln'
+- name: buildPlatform
+  default: 'Any CPU'
+- name: buildConfiguration
+  default: 'Release'
+- name: artifactName
+  default: 'Artifact'
+- name: packageDirectory
+  default: 'packages'
+
+steps:
+- template: template_nuget_restore.yml
+  parameters:
+    solution: '$(solution)'
+    packageDirectory: ${{ parameters.packageDirectory }}
+
+- task: VSBuild@1
+  name: 'Build'
+  displayName: 'Build Solution'
+  inputs:
+    solution: ${{ parameters.solution }}
+    platform: ${{ parameters.buildPlatform }}
+    configuration: ${{ parameters.buildConfiguration }}
+    msbuildArgs: '/t:build /p:DeployOnBuild=true /p:OutputPath="$(Build.ArtifactStagingDirectory)"'
+    clean: true
+
+- task: PublishBuildArtifacts@1
+  displayName: 'Publish Build Artifact'
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: ${{ parameters.artifactName }}
+    publishLocation: 'Container'

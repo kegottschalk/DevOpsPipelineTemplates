@@ -1,0 +1,22 @@
+################################################################################
+#
+# template_json_config_transform
+# This template will modify JSON config files (i.e. appsettings.json)
+#
+# REVISION HISTORY
+# KG - 1/10/2024 - Initial Version
+#
+################################################################################
+
+parameters:
+- name: jsonFileName
+  default: '**/appsettings.json'
+- name: archiveFilePath
+  default: ''
+
+steps:
+- task: FileTransform@2
+  displayName: 'File transformation: ${{ parameters.jsonFileName }}'
+  inputs:
+    folderPath: '${{ parameters.archiveFilePath }}'
+    jsonTargetFiles: '${{ parameters.jsonFileName }}'

@@ -1,0 +1,33 @@
+################################################################################
+#
+# template_publish_artifacts_generic
+# Template will copy specified files and publish them as a Build Artifact
+#
+# REVISION HISTORY
+# KG - 1/29/2024 - Feature 744 - Initial Version
+#
+################################################################################
+
+parameters:
+- name: sourceFolder
+  default: ''
+- name: contents
+  default: '*.*'
+- name: targetFolder
+  default: ''
+- name: artifactName
+  default: ''
+
+steps:
+  - task: CopyFiles@2 #copy template .json files to Artifact Staging, then publish them as a Pipeline artifact
+    displayName: 'Copy Files'
+    inputs:
+      SourceFolder: '${{ parameters.sourceFolder }}'
+      Contents: '${{ parameters.contents }}'
+      TargetFolder: '$(Build.ArtifactStagingDirectory)'
+
+  - task: PublishPipelineArtifact@1
+    displayName: 'Publish Artifact'
+    inputs:
+      targetPath: '$(Build.ArtifactStagingDirectory)'
+      artifact: '$(artifactName)'

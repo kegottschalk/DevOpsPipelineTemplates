@@ -1,0 +1,81 @@
+################################################################################
+#
+# template_sql_database_deploy
+# Template will download Dacpac file, update DB using sqlpackage, then publish deploy results files. Optionally, can create Deploy Report only without upgrading the DB
+#
+# REVISION HISTORY
+# KG - 1/29/2024 - Initial Version
+# KG - 5/7/2024 - Add reportOnly parameter and run sqlpackage with /Action:DeployReport if true
+#
+################################################################################
+
+parameters:
+- name: deployEnvironmentName
+  default: ''
+- name: artifactName
+  default: ''
+- name: SqlpackagePath
+  default: ''
+- name: DacpacName
+  default: ''
+- name: DBServerName
+  default: ''
+- name: DatabaseName
+  default: ''
+- name: SQLCMDVariables
+  default: ''
+- name: reportOnly
+  default: false
+  type: boolean
+
+jobs: 
+- deployment: 'UpdateDatabase${{ parameters.DBServerName }}${{ parameters.DatabaseName }}'
+  displayName: 'Update Database - ${{ parameters.DBServerName }} - ${{ parameters.DatabaseName }}'
+  environment: '${{ parameters.deployEnvironmentName }}'
+  strategy:
+    runOnce:
+      deploy:
+        steps:
+        - checkout: none
+
+        - download: current
+          name: 'DownloadBuildArtifacts'
+          displayName: 'Download Build Artifacts'
+          artifact: '${{ parameters.artifactName }}'
+
+          #REPORT ONLY - Won't upgrade
+        - ${{ if eq(parameters.reportOnly, true) }}:
+          - task: PowerShell@2
+            displayName: 'Upgrade DB using sqlpackage'
+            inputs:
+              targetType: inline
+              failOnStderr: true
+              showWarnings: true
+              #For whatever reason, multi-line strings using either > or | were not executing the command, so all in one (really long) string it is
+              script: '& "${{ parameters.SqlpackagePath }}" /Action:DeployReport /SourceFile:"$(Pipeline.Workspace)\$(artifactName)\${{ parameters.DacpacName }}" /TargetServerName:"${{ parameters.DBServerName }}" /TargetDatabaseName:"${{ parameters.DatabaseName }}" /OutputPath:"$(Pipeline.Workspace)\$(artifactName)\deploy_report.xml" /TargetTrustServerCertificate:True /TargetEncryptConnection:False /p:DropConstraintsNotInSource=False /p:DropDmlTriggersNotInSource=False /p:DropIndexesNotInSource=False /p:DropObjectsNotInSource=False /p:DropPermissionsNotInSource=False /p:DropRoleMembersNotInSource=False /p:DropStatisticsNotInSource=False /p:IgnorePermissions=True /p:IgnoreRoleMembership=True /p:PreserveIdentityLastValues=True /p:VerifyDeployment=True ${{ parameters.SQLCMDVariables }}'
+
+          #UPGRADE
+        - ${{ else }}:
+          - task: PowerShell@2
+            displayName: 'Upgrade DB using sqlpackage'
+            inputs:
+              targetType: inline
+              failOnStderr: true
+              showWarnings: true
+              #For whatever reason, multi-line strings using either > or | were not executing the command, so all in one (really long) string it is
+              script: '& "${{ parameters.SqlpackagePath }}" /Action:Publish /SourceFile:"$(Pipeline.Workspace)\$(artifactName)\${{ parameters.DacpacName }}" /TargetServerName:"${{ parameters.DBServerName }}" /TargetDatabaseName:"${{ parameters.DatabaseName }}" /DeployReportPath:"$(Pipeline.Workspace)\$(artifactName)\deploy_report.xml" /DeployScriptPath:"$(Pipeline.Workspace)\$(artifactName)\deploy_script.sql" /TargetTrustServerCertificate:True /TargetEncryptConnection:False /p:DropConstraintsNotInSource=False /p:DropDmlTriggersNotInSource=False /p:DropIndexesNotInSource=False /p:DropObjectsNotInSource=False /p:DropPermissionsNotInSource=False /p:DropRoleMembersNotInSource=False /p:DropStatisticsNotInSource=False /p:IgnorePermissions=True /p:IgnoreRoleMembership=True /p:PreserveIdentityLastValues=True /p:VerifyDeployment=True ${{ parameters.SQLCMDVariables }}'
+
+        - task: ArchiveFiles@2
+          displayName: "Zip Deploy Results"
+          inputs:
+            rootFolderOrFile: '$(Pipeline.Workspace)\$(artifactName)\deploy_*.*'
+            archiveFile: '$(Pipeline.Workspace)\$(artifactName)\deploy_results.zip'
+            archiveType: zip
+            replaceExistingArchive: true
+
+        - task: PublishPipelineArtifact@1
+          displayName: 'Publish Deploy Results'
+          inputs:
+            targetPath: '$(Pipeline.Workspace)\$(artifactName)\deploy_results.zip'
+            artifact: 'Deploy Results ${{ parameters.DBServerName }} ${{ parameters.databaseName }}'
+            publishLocation: 'pipeline'
