@@ -1,0 +1,87 @@
+################################################################################
+#
+# build_deploy_sql_db
+# Build, Package, and Deploy a SQL database running on a VM-based SQL Server
+# Uses templates from the PipelineTemplates Repo for the build, package, and deploy steps
+#
+# REVISION HISTORY
+# KG - 5/7/2024 - Initial Version
+#
+################################################################################
+
+trigger:
+- main
+
+pool:
+  vmImage: windows-latest
+
+variables:
+  solution: 'DBFolder/DBProject.sqlproj'
+  buildPlatform: 'Any CPU'
+  buildConfiguration: 'Release'
+  projectName: 'DBProject'
+  artifactName: 'TheDatabase'
+  deployEnvironment: 'Prod_DatabaseServers.<ServerName>' #DevOps Environment.ServerName where the DevOps Pipeline Agent is running
+  serverName: '<ServerName>'
+
+
+parameters:
+  - name: DBInstances  #allows for the same dacpac to be deployed to multiple DBs on the same server (can be just one item)
+    type: object
+    default:
+    - 'TestDatabase01'
+    - 'TestDatabase02'
+
+
+resources:
+  repositories:
+  - repository: templatesFromRepo #alias
+    type: git
+    name: PipelineTemplates #actual name of the referenced repo. Assumes template files are in their own repo in the same DevOps Project
+
+stages:
+- stage: BuildAndPublish
+  displayName: 'Build and Publish'
+  jobs:
+  - job: BuildAndPublish
+    displayName: 'Build and Publish'
+
+    steps:
+    - template: template_vs_build.yml@templatesFromRepo
+      parameters:
+        solution: '$(solution)'
+        buildPlatform: '$(buildPlatform)'
+        buildConfiguration: '$(buildConfiguration)'
+
+    - task: CopyFiles@2
+      displayName: 'Copy DACPAC'
+      inputs:
+        SourceFolder: '$(Agent.BuildDirectory)\s\$(projectName)\bin\Output\'
+        Contents: '*.dacpac'
+        TargetFolder: '$(Build.ArtifactStagingDirectory)'
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Artifact'
+      inputs:
+        targetPath: '$(Build.ArtifactStagingDirectory)'
+        artifact: '$(artifactName)'
+
+- stage: Deploy
+  displayName: 'Deploy'
+  variables:
+  - group: 'Prod_Connection_Variables' #Includes DacpacName, SqlPackagePath, and ReferencedDatabaseName
+  - name: SQLCMDVariables
+    value: '/v:ReferencedDB=$(ReferencedDatabaseName)' #aliases for other DB names referenced in the project
+
+  jobs:
+  - ${{ each instance in parameters.DBInstances }}: #loop through the DBInstances array to deploy to each DB listed
+    - template: template_sql_database_deploy.yml@templatesFromRepo
+      parameters:
+        #reportOnly: true #can pass this, and will just generate an upgrade report. Default is false = actually deploy
+        deployEnvironmentName: '$(deployEnvironment)'
+        artifactName: '${{ variables.artifactName }}'
+        SqlpackagePath: '$(SqlpackagePath)'
+        DacpacName: '$(DacpacName)'
+        DBServerName: '${{ variables.serverName }}'
+        DatabaseName: '${{ instance }}'
+        SQLCMDVariables: '$(SQLCMDVariables)'

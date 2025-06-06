@@ -1,0 +1,75 @@
+################################################################################
+#
+# build_deploy_console_app
+# Build, Package, and Deploy a console app
+# Triggered on commit to the "main" branch
+# Uses templates from the PipelineTemplates Repo for the build, package, and deploy steps
+#
+# REVISION HISTORY
+# KG - 5/3/2024 - Initial Version
+################################################################################
+
+trigger:
+- main
+
+pool:
+  vmImage: windows-latest
+
+variables:
+  solution: '**/*.sln'
+  buildPlatform: 'Any CPU'
+  buildConfiguration: 'Release'
+  artifactName: 'ConsoleApp'
+  deployEnvironment: 'Prod_DatabaseServers.<ServerName>' #DevOps Environment.ServerName where the DevOps Pipeline Agent is running
+  serverName: '<ServerName>'
+  PSDeployScript: 'PostDeploy_Prod.ps1'
+
+resources:
+  repositories:
+  - repository: templatesFromRepo #alias
+    type: git
+    name: PipelineTemplates #actual name of the referenced repo. Assumes template files are in their own repo in the same DevOps Project
+
+stages:
+- stage: Build
+  jobs:
+  - job: Build
+    displayName: 'Build'
+
+    steps:
+    - template: template_vs_build.yml@templatesFromRepo
+      parameters:
+        solution: '$(solution)'
+        buildPlatform: '$(buildPlatform)'
+        buildConfiguration: '$(buildConfiguration)'
+
+- stage: Publish
+  jobs:
+  - job: Publish
+    displayName: 'Publish Artifacts'
+
+    steps:
+    - template: template_vs_publish.yml@templatesFromRepo
+      parameters:
+        buildConfiguration: '$(buildConfiguration)'
+        publishWebProjects: false
+        zipAfterPublish: false
+        ArtifactName: '$(artifactName)'
+    
+- stage: Deploy
+  variables:
+  - group: 'Prod_Connection_Variables' #variables that will be used in the .config file replacement
+
+
+  jobs:
+  - template: template_console_app_deploy.yml@templatesFromRepo
+    parameters:
+      deployEnvironmentName: '$(deployEnvironment)'
+      serverName: '${{ variables.serverName }}'
+      destinationDirectory: '$(BaseInstallPath)'
+      packageFilePath: '$(Pipeline.Workspace)/${{ variables.artifactName }}'
+      artifactName: '${{ variables.artifactName }}'
+      baseConfigFileName: '**/*.config'
+      releaseConfigFileName: '**/*.Release.config'
+      postDeployPSScript: '$(BaseInstallPath)$(PSDeployScript)'
+
